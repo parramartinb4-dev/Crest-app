@@ -1,0 +1,7 @@
+INGRESOS FIJOS - com aplicar aquest zip
+
+1. Descomprimeix-lo DINS de la carpeta del projecte i accepta sobreescriure.
+2. IMPORTANT: torna a publicar firestore.rules (Firebase Console > Firestore > Reglas > enganxar > Publicar,
+   o:  npx firebase-tools deploy --only firestore:rules ).
+   Sense aixo, guardar un ingres fix dona error de permisos.
+3. npm run dev

@@ -1,0 +1,109 @@
+rules_version = '2';
+
+// Cada usuario solo puede leer y escribir lo que cuelga de users/{su uid}.
+// Todo lo que no aparece aquí queda denegado por defecto.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function text(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    // ── Perfil: users/{uid} ──
+    function validUser(d) {
+      return d.keys().hasOnly(['name', 'email', 'onboarded', 'mainStart', 'balanceSince', 'limit', 'createdAt'])
+        && text(d.name, 60)
+        && text(d.email, 254)
+        && d.onboarded is bool
+        && d.mainStart is int
+        && d.balanceSince is timestamp
+        && d.limit is int && d.limit >= 0
+        && d.createdAt is number;
+    }
+
+    // ── Movimientos: importes en céntimos (enteros) ──
+    function validTx(d) {
+      return d.keys().hasOnly(['name', 'amount', 'type', 'cat', 'method', 'date'])
+        && text(d.name, 120)
+        && d.amount is int && d.amount > 0
+        && d.type in ['expense', 'income']
+        && d.cat in ['coche', 'mascotas', 'deporte', 'compras', 'ocio', 'ahorro', 'ingreso', 'otros']
+        && d.method in ['card', 'account']
+        && d.date is timestamp;
+    }
+
+    function validRule(d) {
+      return d.keys().hasOnly(['type', 'name', 'amount', 'day', 'method', 'cat', 'start'])
+        && d.type in ['expense', 'income']
+        && text(d.name, 120)
+        && d.amount is int && d.amount > 0
+        && d.day is int && d.day >= 1 && d.day <= 28
+        && d.method in ['card', 'account']
+        && d.cat in ['coche', 'mascotas', 'deporte', 'compras', 'ocio', 'ahorro', 'ingreso', 'otros']
+        && text(d.start, 7);
+    }
+
+    function validHolding(d) {
+      return d.keys().hasOnly(['name', 'symbol', 'qty', 'avg', 'price', 'createdAt'])
+        && text(d.name, 120)
+        && text(d.symbol, 40)
+        && d.qty is number && d.qty > 0
+        && d.avg is int && d.avg > 0
+        && d.price is int && d.price > 0
+        && d.createdAt is number;
+    }
+
+    function validGoal(d) {
+      return d.keys().hasOnly(['name', 'saved', 'target', 'monthsLeft', 'deadline', 'color', 'createdAt'])
+        && text(d.name, 120)
+        && d.saved is int && d.saved >= 0
+        && d.target is int && d.target > 0
+        && d.monthsLeft is int && d.monthsLeft > 0
+        && text(d.deadline, 40)
+        && text(d.color, 20)
+        && d.createdAt is number;
+    }
+
+    // Una foto del patrimonio por día; el id del documento es el día (2026-09-30)
+    function validSnapshot(d, id) {
+      return d.keys().hasOnly(['day', 'v'])
+        && d.day is string && d.day == id && d.day.size() == 10
+        && d.v is int;
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validUser(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /users/{uid}/transactions/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validTx(request.resource.data);
+    }
+
+    match /users/{uid}/rules/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validRule(request.resource.data);
+    }
+
+    match /users/{uid}/holdings/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validHolding(request.resource.data);
+    }
+
+    match /users/{uid}/goals/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validGoal(request.resource.data);
+    }
+
+    match /users/{uid}/snapshots/{id} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validSnapshot(request.resource.data, id);
+    }
+  }
+}

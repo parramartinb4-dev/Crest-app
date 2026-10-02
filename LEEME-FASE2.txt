@@ -1,0 +1,8 @@
+FASE 2 (Crest en la nube) - como aplicar este zip sobre tu proyecto
+
+1. Descomprime este zip DENTRO de tu carpeta del proyecto y acepta sobrescribir.
+2. BORRA estos dos archivos, que ya no se usan y darian errores de tipos:
+     src/lib/mockData.ts
+     src/lib/storage.ts
+3. En la terminal:   npm install     (instala firebase)
+4. Sigue el README.md: activar Email/Contrasena y Firestore en la consola, publicar firestore.rules, y npm run dev.
