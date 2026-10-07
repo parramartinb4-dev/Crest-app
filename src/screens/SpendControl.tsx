@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { isActiveRule } from "../lib/recurrence";
 import { LineChart, Line, YAxis, ResponsiveContainer } from "recharts";
 import { formatEUR } from "../lib/format";
 import { NEON, FONT } from "../lib/theme";
@@ -61,7 +62,7 @@ export function SpendControl({ active, txs, rules, limit, setLimit }: { active: 
         <Stat label="Hoy puedes gastar" value={formatEUR(Math.max(0, Math.round(m.leftToday)))} color={st.color}
           sub={m.leftToday < 0 ? "Ya te pasaste hoy" : `Media ideal ${formatEUR(Math.round(m.vBudget / DIM))}/día`} />
         <Stat label="Te quedan" value={formatEUR(Math.max(0, limit - m.spent))} sub={`${DIM - m.d} días más`} />
-        <Stat label="Fijos reservados" value={formatEUR(m.fixed)} sub={`${rules.filter((r) => r.type === "expense").length} gastos fijos`} />
+        <Stat label="Fijos reservados" value={formatEUR(m.fixed)} sub={`${rules.filter((r) => r.type === "expense" && isActiveRule(r)).length} gastos fijos`} />
         <Stat label="Previsión de cierre" value={formatEUR(m.projected)} color={m.projected > limit ? STATUS.red.color : STATUS.green.color}
           sub={m.projected > limit ? "Superarías el límite" : "Dentro del límite"} />
       </div>

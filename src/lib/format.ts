@@ -34,3 +34,6 @@ export function parseEURToCents(input: string): number | null {
 export const signed = (c: number): string => (c >= 0 ? "+" : "") + formatEUR(c);
 export const signedPct = (p: number): string =>
   (p >= 0 ? "+" : "") + (p * 100).toLocaleString("es-ES", { maximumFractionDigits: 1 }) + " %";
+
+/** Céntimos → texto para un campo de formulario: 10500 → "105", 10550 → "105,50". */
+export const centsToInput = (cents: number): string => (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2).replace(".", ","));

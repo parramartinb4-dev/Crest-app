@@ -23,17 +23,39 @@ export interface Tx {
   method: PayMethod;
   date: Date;
   recurring?: boolean;
+  ruleId?: string; // si viene de un gasto/ingreso fijo: cuál
+  freq?: Freq; // y con qué frecuencia se aplicó
 }
+export type Freq = "weekly" | "monthly" | "quarterly" | "yearly";
+
+/** Configuración anterior de un fijo: se aplicó hasta `until` (incluido, "2026-09-30"). */
+export interface RuleVersion {
+  until: string;
+  type: TxType;
+  amount: number;
+  freq: Freq;
+  day: number;
+  month: number;
+}
+
 export interface RecurringRule {
   id: string;
   type: TxType; // "expense" = gasto fijo, "income" = ingreso fijo (nómina, alquiler que cobras...)
   name: string;
-  amount: number;
-  day: number; // 1-28
+  amount: number; // importe de CADA cobro (no el equivalente mensual)
+  freq: Freq;
+  /** Semanal: día de la semana (1 lunes … 7 domingo). Resto: día del mes (1-28). */
+  day: number;
+  /** Trimestral: 1, 2 o 3 (cobra ese mes y cada 3 meses). Anual: mes del cobro (1-12). Resto: 1. */
+  month: number;
   method: PayMethod;
   cat: CategoryKey;
   start?: string; // mes en que se creó ("2026-09"): los cobros empiezan ahí
+  end?: string; // si lo dejaste de aplicar: último día en que contó ("2026-10-01")
+  past?: RuleVersion[]; // configuraciones anteriores: así un cambio de importe vale desde hoy y no reescribe el pasado
 }
+export type NewRule = Omit<RecurringRule, "id" | "start" | "end" | "past">;
+export type EditingEntry = { kind: "tx"; tx: Tx } | { kind: "rule"; rule: RecurringRule };
 export interface NewTxInput {
   type: TxType;
   amount: number;
@@ -41,6 +63,10 @@ export interface NewTxInput {
   method: PayMethod;
   fixed: boolean;
   day: number;
+  freq: Freq;
+  month: number;
+  date?: Date; // solo al editar un movimiento
+  retro?: boolean; // solo al editar un fijo: aplicar el cambio a todo el historial
 }
 export interface GoalView {
   id: string;

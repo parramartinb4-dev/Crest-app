@@ -1,5 +1,6 @@
 import { TODAY } from "./dates";
 import { monthKey } from "./transactions";
+import { isActiveRule, monthlyEquivalent } from "./recurrence";
 import type { Tx, RecurringRule, StatusKey, SpendMetrics } from "./models";
 
 /**
@@ -19,10 +20,17 @@ export function computeSpend(txs: Tx[], rules: RecurringRule[], limit: number): 
   const d = TODAY.getDate();
   const month = txs.filter((t) => t.type === "expense" && t.cat !== "ahorro" && monthKey(t.date) === monthKey(TODAY));
   const sum = (a: Tx[]) => a.reduce((x, t) => x + t.amount, 0);
-  const spent = sum(month);
-  const fixed = rules.filter((r) => r.type === "expense").reduce((x, r) => x + r.amount, 0); // los ingresos fijos no reservan límite
-  const vBudget = Math.max(0, limit - fixed);
+  // Fijos que reservan límite (los ingresos no): cada uno por lo que pesa AL MES (trimestral ÷ 3, anual ÷ 12, semanal × 52 ÷ 12)
+  const expenseRules = rules.filter((r) => r.type === "expense" && isActiveRule(r));
+  const fixed = expenseRules.reduce((x, r) => x + monthlyEquivalent(r.amount, r.freq), 0);
+  // Gasto del mes = variable + cobros reales de los fijos semanales/mensuales + la parte mensual de los trimestrales/anuales
   const variable = month.filter((t) => !t.recurring);
+  const charged = month.filter((t) => t.recurring && t.freq !== "quarterly" && t.freq !== "yearly");
+  const provisions = expenseRules
+    .filter((r) => (r.freq === "quarterly" || r.freq === "yearly") && r.cat !== "ahorro")
+    .reduce((x, r) => x + monthlyEquivalent(r.amount, r.freq), 0);
+  const spent = sum(variable) + sum(charged) + provisions;
+  const vBudget = Math.max(0, limit - fixed);
   const vSpent = sum(variable);
   const vToday = sum(variable.filter((t) => t.date.getDate() === d));
   const daysLeft = DIM - d + 1;

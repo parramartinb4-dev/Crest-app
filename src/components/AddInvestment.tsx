@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { formatEUR, parseDecimal, parseEURToCents, signed, signedPct } from "../lib/format";
+import { centsToInput, formatEUR, parseDecimal, parseEURToCents, signed, signedPct } from "../lib/format";
 import { NEON } from "../lib/theme";
 import { Sheet, Field, MoneyInput, inputCls } from "./forms";
-import type { NewHoldingInput } from "../lib/models";
+import type { Holding, NewHoldingInput } from "../lib/models";
 
 interface Form {
   name: string;
@@ -12,16 +12,43 @@ interface Form {
   price: string;
 }
 const EMPTY: Form = { name: "", symbol: "", qty: "", avg: "", price: "" };
+const fromHolding = (h: Holding): Form => ({
+  name: h.name,
+  symbol: h.symbol,
+  qty: String(h.qty).replace(".", ","),
+  avg: centsToInput(h.avg),
+  price: centsToInput(h.price),
+});
 
-export function AddInvestment({ open, onClose, onSave }: { open: boolean; onClose: () => void; onSave: (v: NewHoldingInput) => void }) {
+/** Crea una inversión o, si recibe `holding`, la edita (p. ej. para actualizar el precio actual) y permite eliminarla. */
+export function AddInvestment({
+  open,
+  onClose,
+  onSave,
+  holding,
+  onDelete,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (v: NewHoldingInput) => void;
+  holding?: Holding | null;
+  onDelete?: () => void;
+}) {
   const [f, setF] = useState<Form>(EMPTY);
+  const [confirm, setConfirm] = useState(false);
   const set = (p: Partial<Form>) => setF((x) => ({ ...x, ...p }));
+  const editing = !!holding;
   useEffect(() => {
-    if (!open) {
-      const t = setTimeout(() => setF(EMPTY), 450);
-      return () => clearTimeout(t);
+    if (open) {
+      setF(holding ? fromHolding(holding) : EMPTY);
+      setConfirm(false);
     }
-  }, [open]);
+  }, [open, holding?.id]);
+  useEffect(() => {
+    if (!confirm) return;
+    const t = setTimeout(() => setConfirm(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirm]);
 
   const qty = parseDecimal(f.qty);
   const avg = parseEURToCents(f.avg);
@@ -39,7 +66,12 @@ export function AddInvestment({ open, onClose, onSave }: { open: boolean; onClos
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Nueva inversión" subtitle="Fondos, acciones o cuentas remuneradas">
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={editing ? "Editar inversión" : "Nueva inversión"}
+      subtitle={editing ? "Actualiza el precio actual cuando quieras" : "Fondos, acciones o cuentas remuneradas"}
+    >
       <div
         className="flex flex-1 flex-col gap-4 pt-1"
         onKeyDown={(e) => {
@@ -96,9 +128,18 @@ export function AddInvestment({ open, onClose, onSave }: { open: boolean; onClos
             className="h-14 w-full rounded-2xl text-lg font-black text-black transition-opacity disabled:opacity-30"
             style={{ background: NEON.lime }}
           >
-            Guardar inversión
+            {editing ? "Guardar cambios" : "Guardar inversión"}
           </button>
           {!valid && <p className="mt-2 text-center text-xs text-zinc-500">Necesito cantidad, precio medio y precio actual.</p>}
+          {editing && onDelete && (
+            <button
+              onClick={() => (confirm ? onDelete() : setConfirm(true))}
+              className="mt-3 h-12 w-full rounded-2xl border text-base font-black transition-colors"
+              style={confirm ? { background: NEON.pink, borderColor: NEON.pink, color: "#000" } : { borderColor: NEON.pink + "88", color: NEON.pink }}
+            >
+              {confirm ? "Toca otra vez para eliminar" : "Eliminar inversión"}
+            </button>
+          )}
         </div>
       </div>
     </Sheet>

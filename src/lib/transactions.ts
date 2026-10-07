@@ -1,4 +1,5 @@
 import { TODAY } from "./dates";
+import { occurrencesBetween, ruleSegments } from "./recurrence";
 import type { Tx, RecurringRule } from "./models";
 
 export const monthKey = (d: Date) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
@@ -11,33 +12,32 @@ export const signedAmt = (t: Tx) => (t.type === "income" ? t.amount : -t.amount)
 export const sumTx = (a: Tx[]) => a.reduce((s, t) => s + signedAmt(t), 0);
 
 /**
- * Movimientos de los gastos e ingresos fijos que ya tocaba aplicar: uno por mes desde que se creó la regla
- * (o desde el mes del saldo inicial, lo que sea más tarde) hasta hoy.
- * El saldo solo cuenta los posteriores al saldo inicial (filtro en Main); el control de gasto usa los del mes.
+ * Movimientos de los gastos e ingresos fijos que ya tocaba aplicar (semanales, mensuales, trimestrales o anuales),
+ * desde que se creó la regla (o desde el mes del saldo inicial, lo que sea más tarde) hasta hoy.
+ * El saldo solo cuenta los posteriores al saldo inicial (filtro en AppShell); el control de gasto usa los del mes.
  */
 export function recurringTxs(rules: RecurringRule[], since: Date): Tx[] {
   const out: Tx[] = [];
-  const now = TODAY.getTime();
   const sinceMonth = new Date(since.getFullYear(), since.getMonth(), 1);
   for (const r of rules) {
     const [y, m] = (r.start ?? monthKey(since)).split("-").map(Number);
-    let cursor = new Date(y, m - 1, 1);
-    if (cursor.getTime() < sinceMonth.getTime()) cursor = sinceMonth;
-    while (cursor.getTime() <= now) {
-      const date = new Date(cursor.getFullYear(), cursor.getMonth(), r.day);
-      if (date.getTime() <= now) {
+    let first = new Date(y, m - 1, 1);
+    if (first.getTime() < sinceMonth.getTime()) first = sinceMonth;
+    for (const seg of ruleSegments(r, first, TODAY)) {
+      for (const date of occurrencesBetween(seg, seg.from, seg.to)) {
         out.push({
-          id: `rec-${r.id}-${monthKey(cursor)}`,
+          id: `rec-${r.id}-${toDayKey(date)}`,
+          ruleId: r.id,
+          freq: seg.freq,
           name: r.name,
-          amount: r.amount,
-          type: r.type,
-          cat: r.cat,
+          amount: seg.amount,
+          type: seg.type,
+          cat: seg.type === r.type ? r.cat : seg.type === "income" ? "ingreso" : "otros",
           method: r.method,
           date,
           recurring: true,
         });
       }
-      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
   }
   return out;

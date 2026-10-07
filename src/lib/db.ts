@@ -3,7 +3,8 @@ import type { DocumentData } from "firebase/firestore";
 import { db } from "./firebase";
 import { CATS } from "./categories";
 import { daysUntil, monthsFromDays } from "./goals";
-import type { CategoryKey, GoalView, Holding, NewGoalInput, NewHoldingInput, Profile, RecurringRule, Tx } from "./models";
+import { toDayKey } from "./transactions";
+import type { CategoryKey, Freq, GoalView, Holding, NewGoalInput, NewHoldingInput, NewRule, Profile, RecurringRule, RuleVersion, Tx } from "./models";
 
 /*
  * Estructura en Firestore (todo cuelga del uid del usuario, que es lo que protegen las reglas):
@@ -29,24 +30,45 @@ export const txDoc = (t: Omit<Tx, "id" | "recurring">): DocumentData => ({
   date: t.date,
 });
 
-export const ruleDoc = (r: Omit<RecurringRule, "id" | "start">, start: string): DocumentData => ({
+/** Campos editables de un fijo. `past` guarda las configuraciones anteriores (ver RuleVersion). */
+export const rulePatch = (r: NewRule, past: RuleVersion[]): DocumentData => ({
   type: r.type,
   name: clip(r.name, 120),
   amount: r.amount,
+  freq: r.freq,
   day: r.day,
+  month: r.month,
   method: r.method,
   cat: r.cat,
-  start,
+  past,
 });
 
-export const holdingDoc = (h: NewHoldingInput): DocumentData => ({
+export const ruleDoc = (r: NewRule, start: string): DocumentData => ({ ...rulePatch(r, []), start });
+
+/**
+ * Historial al modificar un fijo. Si cambia el importe, la frecuencia o el día, la configuración anterior queda
+ * cerrada en el día de ayer y la nueva vale desde hoy (el pasado no se reescribe). `retro` = corregir un error:
+ * el cambio se aplica a todo el historial.
+ */
+export function nextPast(old: RecurringRule, next: NewRule, retro: boolean): RuleVersion[] {
+  const past = old.past ?? [];
+  const changed = old.type !== next.type || old.amount !== next.amount || old.freq !== next.freq || old.day !== next.day || old.month !== next.month;
+  if (retro || !changed) return past;
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const snapshot: RuleVersion = { until: toDayKey(yesterday), type: old.type, amount: old.amount, freq: old.freq, day: old.day, month: old.month };
+  return [...past, snapshot].slice(-40);
+}
+
+export const holdingPatch = (h: NewHoldingInput): DocumentData => ({
   name: clip(h.name, 120),
   symbol: clip(h.symbol, 40),
   qty: h.qty,
   avg: h.avg,
   price: h.price,
-  createdAt: Date.now(),
 });
+
+export const holdingDoc = (h: NewHoldingInput): DocumentData => ({ ...holdingPatch(h), createdAt: Date.now() });
 
 /** Campos editables de una meta (sirve para crear y para modificar). */
 export const goalPatch = (g: NewGoalInput): DocumentData => ({
@@ -117,15 +139,30 @@ export const toTx = (id: string, d: DocumentData): Tx => ({
   date: toDate(d.date),
 });
 
+const freqOf = (v: unknown): Freq => (v === "weekly" || v === "quarterly" || v === "yearly" ? v : "monthly");
+
+const toVersion = (p: DocumentData): RuleVersion => ({
+  until: String(p.until ?? ""),
+  type: p.type === "income" ? "income" : "expense",
+  amount: Number(p.amount ?? 0),
+  freq: freqOf(p.freq),
+  day: Number(p.day ?? 1),
+  month: Number(p.month ?? 1),
+});
+
 export const toRule = (id: string, d: DocumentData): RecurringRule => ({
   id,
   type: d.type === "income" ? "income" : "expense", // las reglas antiguas no tenían tipo: eran gastos
   name: String(d.name ?? ""),
   amount: Number(d.amount ?? 0),
+  freq: freqOf(d.freq), // las reglas antiguas no tenían frecuencia: eran mensuales
   day: Number(d.day ?? 1),
+  month: Number(d.month ?? 1),
   method: d.method === "account" ? "account" : "card",
   cat: (d.cat in CATS ? d.cat : "otros") as CategoryKey,
   start: typeof d.start === "string" ? d.start : undefined,
+  end: typeof d.end === "string" ? d.end : undefined,
+  past: Array.isArray(d.past) ? (d.past as DocumentData[]).map(toVersion) : [],
 });
 
 export const toHolding = (id: string, d: DocumentData): Holding => ({

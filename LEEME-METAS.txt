@@ -1,5 +1,0 @@
-METAS: editar, eliminar y plazo libre - com aplicar aquest zip
-
-1. Descomprimeix-lo DINS de la carpeta del projecte i accepta sobreescriure.
-2. No cal tornar a publicar firestore.rules (no han canviat en aquest pas).
-3. npm run dev

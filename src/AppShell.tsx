@@ -14,6 +14,7 @@ import { QuickAdd } from "./components/QuickAdd";
 import { AddInvestment } from "./components/AddInvestment";
 import { AddGoal } from "./components/AddGoal";
 import { SettingsSheet } from "./components/SettingsSheet";
+import { BalanceSheet } from "./components/BalanceSheet";
 import { Splash, ErrorScreen } from "./components/Splash";
 import { AssistantButton, ChatPanel } from "./components/Assistant";
 import { Dashboard } from "./screens/Dashboard";
@@ -21,7 +22,7 @@ import { Goals } from "./screens/Goals";
 import { Accounts } from "./screens/Accounts";
 import { Investments } from "./screens/Investments";
 import { SpendControl } from "./screens/SpendControl";
-import type { TabId, NewTxInput, ChatMessage, NewHoldingInput, NewGoalInput, Profile, GoalView } from "./lib/models";
+import type { TabId, NewTxInput, ChatMessage, NewHoldingInput, NewGoalInput, Profile, GoalView, Holding, EditingEntry } from "./lib/models";
 
 const NAV: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: "patrimonio", label: "Patrimonio", icon: LayoutDashboard },
@@ -42,7 +43,10 @@ export function AppShell({ uid, email, profile, onSignOut }: { uid: string; emai
 
   const [chatOpen, setChatOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<EditingEntry | null>(null); // null = movimiento nuevo
+  const [balanceOpen, setBalanceOpen] = useState(false);
   const [invOpen, setInvOpen] = useState(false);
+  const [editingHolding, setEditingHolding] = useState<Holding | null>(null); // null = inversión nueva
   const [goalOpen, setGoalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalView | null>(null); // null = crear una nueva
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -78,16 +82,45 @@ export function AppShell({ uid, email, profile, onSignOut }: { uid: string; emai
     return () => window.clearTimeout(t);
   }, [cloud.ready, cloud.saveSnapshot, netWorth, history]);
 
-  const saveTx = ({ type, amount, name, method, fixed, day }: NewTxInput) => {
+  const openTxForm = (e: EditingEntry | null) => {
+    setEditingEntry(e);
+    setModalOpen(true);
+  };
+  const saveTx = ({ type, amount, name, method, fixed, day, freq, month, date, retro }: NewTxInput) => {
     const cat = type === "income" ? "ingreso" : detectCat(name);
     const label = name.trim() || (type === "income" ? "Ingreso" : "Gasto");
-    if (fixed) cloud.addRule({ type, name: label, amount, day, method, cat });
+    if (editingEntry?.kind === "rule") cloud.updateRule(editingEntry.rule, { type, name: label, amount, freq, day, month, method, cat }, !!retro);
+    else if (editingEntry?.kind === "tx") cloud.updateTx(editingEntry.tx.id, { name: label, amount, type, cat, method, date: date ?? editingEntry.tx.date });
+    else if (fixed) cloud.addRule({ type, name: label, amount, freq, day, month, method, cat });
     else cloud.addTx({ name: label, amount, type, cat, method, date: new Date() });
     setModalOpen(false);
   };
+  const removeEntry = () => {
+    if (editingEntry?.kind === "rule") cloud.deleteRule(editingEntry.rule.id);
+    else if (editingEntry?.kind === "tx") cloud.deleteTx(editingEntry.tx.id);
+    setModalOpen(false);
+  };
+  const stopRule = () => {
+    if (editingEntry?.kind === "rule") cloud.endRule(editingEntry.rule.id);
+    setModalOpen(false);
+  };
+  // Pones el saldo real que ves en el banco; Crest recalcula el saldo inicial para que cuadre
+  const adjustBalance = (target: number) => {
+    cloud.saveMainStart(target - sumTx(counted));
+    setBalanceOpen(false);
+  };
 
+  const openHoldingForm = (h: Holding | null) => {
+    setEditingHolding(h);
+    setInvOpen(true);
+  };
   const saveHolding = (h: NewHoldingInput) => {
-    cloud.addHolding(h);
+    if (editingHolding) cloud.updateHolding(editingHolding.id, h);
+    else cloud.addHolding(h);
+    setInvOpen(false);
+  };
+  const removeHolding = () => {
+    if (editingHolding) cloud.deleteHolding(editingHolding.id);
     setInvOpen(false);
   };
   const openGoalForm = (g: GoalView | null) => {
@@ -104,7 +137,7 @@ export function AppShell({ uid, email, profile, onSignOut }: { uid: string; emai
     setGoalOpen(false);
   };
   // El "+" de la cabecera abre el formulario de la sección en la que estás
-  const openAdd = () => (active === 2 ? setInvOpen(true) : active === 3 ? openGoalForm(null) : setModalOpen(true));
+  const openAdd = () => (active === 2 ? openHoldingForm(null) : active === 3 ? openGoalForm(null) : openTxForm(null));
   const addLabel = active === 2 ? "Añadir inversión" : active === 3 ? "Añadir meta" : "Añadir movimiento";
 
   const [typing, setTyping] = useState(false);
@@ -179,8 +212,8 @@ export function AppShell({ uid, email, profile, onSignOut }: { uid: string; emai
 
   const screens = [
     <Dashboard cash={mainBal} invest={invest} history={history} />,
-    <Accounts txs={allTxs} rules={rules} mainBal={mainBal} since={since} />,
-    <Investments holdings={holdings} />,
+    <Accounts txs={allTxs} rules={rules} mainBal={mainBal} since={since} onEdit={openTxForm} onAdjustBalance={() => setBalanceOpen(true)} />,
+    <Investments holdings={holdings} onSelect={openHoldingForm} />,
     <Goals active={active === 3} goals={goals} onSelect={openGoalForm} />,
     <SpendControl active={active === 4} txs={allTxs} rules={rules} limit={limit} setLimit={setLimit} />,
   ];
@@ -266,11 +299,12 @@ export function AppShell({ uid, email, profile, onSignOut }: { uid: string; emai
 
       {/* Botón "+" por sección y asistente (encima del "+") en Inversiones (2) y Metas (3) */}
       <AssistantButton visible={active === 2 || active === 3} onClick={() => setChatOpen(true)} />
-      <Fab visible={active === 1} onClick={() => setModalOpen(true)} />
-      <Fab visible={active === 2} onClick={() => setInvOpen(true)} label="Añadir inversión" />
+      <Fab visible={active === 1} onClick={() => openTxForm(null)} />
+      <Fab visible={active === 2} onClick={() => openHoldingForm(null)} label="Añadir inversión" />
       <Fab visible={active === 3} onClick={() => openGoalForm(null)} label="Añadir meta" />
-      <QuickAdd open={modalOpen} onClose={() => setModalOpen(false)} onSave={saveTx} />
-      <AddInvestment open={invOpen} onClose={() => setInvOpen(false)} onSave={saveHolding} />
+      <QuickAdd open={modalOpen} onClose={() => setModalOpen(false)} onSave={saveTx} editing={editingEntry} onDelete={removeEntry} onStop={stopRule} />
+      <BalanceSheet open={balanceOpen} onClose={() => setBalanceOpen(false)} balance={mainBal} onSave={adjustBalance} />
+      <AddInvestment open={invOpen} onClose={() => setInvOpen(false)} onSave={saveHolding} holding={editingHolding} onDelete={removeHolding} />
       <AddGoal
         open={goalOpen}
         onClose={() => setGoalOpen(false)}
